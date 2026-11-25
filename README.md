@@ -61,7 +61,7 @@ Flight modes: FBWA (00:06) → LOITER (01:43) → FBWA (03:25) → AUTOTUNE (06:
 - 🔒 **Private by default.** Everything runs locally, and the report never prints GPS coordinates or the board's serial number; the track is drawn in metres from the start.
 - 🛑 **Never a false all-clear.** Empty, corrupted or non-DataFlash files are rejected, a log that stops mid-flight is flagged as a crash signature, and anything it couldn't check is listed under *Not checked* (with an INCOMPLETE verdict when too little is there).
 - 🎛️ **Your airframe, your limits:** every pass / warn limit can be changed in a small JSON file.
-- 🧪 **Scriptable and tested:** `--json` output, CI-friendly exit codes, and 44 tests on synthetic logs with injected faults.
+- 🧪 **Scriptable and tested:** `--json` output, CI-friendly exit codes, and 55 tests on synthetic logs with injected faults.
 
 ## What it checks
 
@@ -159,7 +159,6 @@ Mission Planner shows you the graphs; Log Doctor tells you what they mean. It's 
 ## Limits
 
 - Built and tested against ArduCopter and ArduPlane 4.x logs. Rover and Sub logs load, but some checks don't apply to them yet.
-- It doesn't analyse vibration frequencies (FFT) or suggest harmonic notch settings yet.
 - A clean report doesn't mean an aircraft is airworthy. Pre-flight checks still apply.
 
 ## Related
