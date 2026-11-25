@@ -6,6 +6,7 @@
 
 Point Log Doctor at an ArduPilot DataFlash log (`.BIN`) and get a pass / warn / fail health report in seconds: vibration, clipping, EKF, power, GPS, compass, tuning and failsafes, with what to fix for every problem it finds. No MATLAB, no web upload, just Python.
 
+[![tests](https://img.shields.io/github/actions/workflow/status/Prateek-elec/ardupilot-log-doctor/tests.yml?branch=main&label=tests&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/Prateek-elec/ardupilot-log-doctor/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![ArduPilot](https://img.shields.io/badge/ArduPilot-Copter%20%C2%B7%20Plane-0B8ED8?style=for-the-badge&logo=ardupilot&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)
