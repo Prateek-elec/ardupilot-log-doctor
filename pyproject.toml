@@ -9,7 +9,7 @@ description = "Pass / warn / fail health report for ArduPilot DataFlash logs: vi
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Prateek Sarkar" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["pymavlink>=2.4", "numpy>=1.21", "matplotlib>=3.5"]
 keywords = ["ardupilot", "dataflash", "drone", "uav", "log analysis", "mavlink", "arducopter", "arduplane"]
 classifiers = [
@@ -33,7 +33,7 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 140
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "SIM"]

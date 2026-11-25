@@ -54,7 +54,7 @@ class Writer:
     @staticmethod
     def _pack(fmt, values):
         out = b""
-        for ch, v in zip(fmt, values):
+        for ch, v in zip(fmt, values, strict=False):
             code, scale = CODES[ch]
             if code.endswith("s"):
                 v = v.encode() if isinstance(v, str) else v

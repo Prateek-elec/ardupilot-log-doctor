@@ -121,7 +121,7 @@ def graded(value, limit):
 def to_segments(t, mask, min_len=0.0, merge_gap=0.0):
     """[(start, end)] times where mask is true, merging short gaps and dropping short runs."""
     segs, start = [], None
-    for ti, m in zip(t, mask):
+    for ti, m in zip(t, mask, strict=False):
         if m and start is None:
             start = ti
         elif not m and start is not None:
@@ -148,10 +148,10 @@ def in_segments(t, segs, pad=0.0):
 def armed_segments(log):
     arm = log.get("ARM")
     if arm is not None and "ArmState" in arm:
-        events = list(zip(arm["t"], arm["ArmState"]))
+        events = list(zip(arm["t"], arm["ArmState"], strict=False))
     else:
         ev = log.get("EV")
-        events = [(t, 1 if i == 10 else 0) for t, i in zip(ev["t"], ev["Id"]) if i in (10, 11)] if ev is not None else []
+        events = [(t, 1 if i == 10 else 0) for t, i in zip(ev["t"], ev["Id"], strict=False) if i in (10, 11)] if ev is not None else []
     if not events:
         return [(0.0, log.t_end)]
     segs, start = [], None
@@ -440,7 +440,7 @@ def analyse(path, limits=None):
     err = log.get("ERR")
     n_err = 0
     if err is not None:
-        for t, sub, code in zip(err["t"], err["Subsys"], err["ECode"]):
+        for t, sub, code in zip(err["t"], err["Subsys"], err["ECode"], strict=False):
             r.events.append((t, "ERR " + err_text(sub, code)))
             n_err += int(code) != 0 or int(sub) == 10
     add("Errors and failsafes (ERR)", str(n_err), "0", PASS if n_err == 0 else WARN, "err", n_err)
@@ -464,7 +464,7 @@ def analyse(path, limits=None):
     md = log.get("MODE")
     if md is not None:
         nums = md.get("ModeNum", md.get("Mode"))
-        for i, (t, num) in enumerate(zip(md["t"], nums)):
+        for i, (t, num) in enumerate(zip(md["t"], nums, strict=False)):
             end = md["t"][i + 1] if i + 1 < len(md["t"]) else log.t_end
             r.modes.append((t, end, mode_name(r.vehicle, num)))
 

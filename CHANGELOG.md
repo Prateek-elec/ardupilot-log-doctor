@@ -10,6 +10,7 @@
 - **JSON schema 1:** raw `value` per check, `status`, `not_checked`, tool name and version; several logs give one JSON array.
 - Fix hints are ordered by severity; damaged records are counted and reported.
 - Fixes: time base taken from the earliest record; text output honours redirected stdout.
+- Requires Python 3.10+ (3.9 is end-of-life). CI: Linux, Windows, macOS on 3.10 and 3.13.
 - 44 tests on synthetic DataFlash logs with injected faults (no real flight data in the repo).
 
 ## 0.1.0
