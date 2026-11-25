@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ardupilot-log-doctor"
+version = "0.1.0"
+description = "Pass / warn / fail health report for ArduPilot DataFlash logs: vibration, clipping, EKF, power, GPS, compass and tuning."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Prateek Sarkar" }]
+requires-python = ">=3.9"
+dependencies = ["pymavlink>=2.4", "numpy>=1.21", "matplotlib>=3.5"]
+keywords = ["ardupilot", "dataflash", "drone", "uav", "log analysis", "mavlink", "arducopter", "arduplane"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/Prateek-elec/ardupilot-log-doctor"
+
+[project.scripts]
+log-doctor = "log_doctor.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
