@@ -57,7 +57,9 @@ Flight modes: FBWA (00:06) → LOITER (01:43) → FBWA (03:25) → AUTOTUNE (06:
 - 🛩️ **Copter and Plane aware:** it detects the vehicle, names the flight modes, and uses the right tracking limits for each.
 - 🧰 **Tells you what to do.** Every warning and failure comes with a fix to try first.
 - 🔒 **Private by default.** Everything runs locally, and the report never prints GPS coordinates or the board's serial number; the track is drawn in metres from the start.
-- 🧪 **Scriptable:** `--json` output and `--strict` exit codes for batch runs or CI.
+- 🛑 **Never a false all-clear.** Empty, corrupted or non-DataFlash files are rejected, a log that stops mid-flight is flagged as a crash signature, and anything it couldn't check is listed under *Not checked* (with an INCOMPLETE verdict when too little is there).
+- 🎛️ **Your airframe, your limits:** every pass / warn limit can be changed in a small JSON file.
+- 🧪 **Scriptable and tested:** `--json` output, CI-friendly exit codes, and 44 tests on synthetic logs with injected faults.
 
 ## What it checks
 
@@ -76,11 +78,22 @@ Flight modes: FBWA (00:06) → LOITER (01:43) → FBWA (03:25) → AUTOTUNE (06:
 | **Sensors** | Gyro noise at rest, IMU0 vs IMU1 agreement | < 0.3 °/s, < 0.5 m/s² | < 1 °/s, < 1 m/s² |
 | **CPU** | Load and long loops | < 70 %, < 5 % | < 85 %, < 15 % |
 | **Safety** | Pre-arm checks disabled (`ARMING_CHECK = 0`), forced arming | enabled, 0 | – |
+| **Log integrity** | Log ends while flying (crash / power loss), damaged records | lands and disarms, 0 | – |
 | **Events** | ERR subsystems decoded (failsafes, crash check, EKF lane switches…) and notable messages | 0 | – |
 
 Plus a flight summary (flight time, max altitude, speed, distance, battery used) and a flight-mode timeline.
 
-The limits are rules of thumb that suit most small and medium multirotors and planes. A big heavy-lift frame or a racing quad may need different ones; treat a WARN as "look at this", not "this is broken".
+The limits are rules of thumb that suit most small and medium multirotors and planes. A big heavy-lift frame or a racing quad may need different ones; treat a WARN as "look at this", not "this is broken", and adjust them:
+
+```bash
+log-doctor --print-limits > my_limits.json      # all defaults, edit what you need
+log-doctor flight.BIN --limits my_limits.json   # a file with only the limits you change also works
+```
+
+```json
+{ "_comment": "6S heavy-lift", "vibration_mss": { "pass_below": 20, "warn_below": 40 },
+  "cell_min_v": { "pass_at_least": 3.6, "warn_at_least": 3.4 } }
+```
 
 ## Options
 
@@ -89,9 +102,13 @@ log-doctor LOG [LOG ...]       one or more logs, wildcards work (log-doctor logs
   --out DIR                    where to write the .md report and .png figure (default: next to the log)
   --no-plot                    skip the figure
   --no-files                   print the report only
-  --json                       machine-readable output
+  --json                       machine-readable output (several logs: one JSON array)
+  --limits FILE                JSON file overriding some or all pass / warn limits
+  --print-limits               print the default limits as JSON
   --strict                     exit code 1 if any check fails
 ```
+
+**Exit codes:** `0` analysed, `1` a check failed (only with `--strict`), `2` a log or the limits file couldn't be read.
 
 Or from Python:
 
@@ -99,10 +116,14 @@ Or from Python:
 from log_doctor import analyse
 
 report = analyse("00000042.BIN")
-print(report.verdict)
+print(report.status, report.verdict)        # PASS / WARN / FAIL / INCOMPLETE
 for check in report.checks:
-    print(check.status, check.name, check.measured)
+    print(check.status, check.name, check.measured, check.value)
 ```
+
+## Why not just Mission Planner?
+
+Mission Planner shows you the graphs; Log Doctor tells you what they mean. It's a 10-second first look: pass / warn / fail against known limits, with what to fix, so you know where to dig before opening the graphs. It also tells a hard landing apart from a vibration problem, flags disabled safety checks, runs on Windows, Mac and Linux, and batches a whole folder of logs.
 
 ## Getting a log
 
@@ -129,6 +150,8 @@ Bug reports with a log that trips it up are the most useful thing you can send. 
 pip install -e .[test]
 pytest
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [changelog](CHANGELOG.md).
 
 ## License
 

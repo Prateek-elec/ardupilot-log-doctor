@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ardupilot-log-doctor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pass / warn / fail health report for ArduPilot DataFlash logs: vibration, clipping, EKF, power, GPS, compass and tuning."
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,3 +30,14 @@ test = ["pytest>=7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM"]
+ignore = ["E501"]   # hint texts are long sentences
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

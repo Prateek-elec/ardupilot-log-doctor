@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from .doctor import in_segments, local_xy
+from .doctor import local_xy
 
 MODE_COLOURS = ["#dbeafe", "#dcfce7", "#fef3c7", "#fce7f3", "#ede9fe", "#ffedd5", "#e0f2fe", "#f1f5f9"]
 
@@ -23,13 +23,13 @@ def figure(r, path):
     end = max(r.duration_s, 1)
 
     names = []
-    for a, b, name in r.modes:
+    for _, _, name in r.modes:
         if name not in names:
             names.append(name)
     for ax in (ax_alt, ax_vib, ax_att):
-        for a, b, name in r.modes:
+        for a, b, name in r.modes:  # noqa: B007 - name is used below
             ax.axvspan(a, b, color=MODE_COLOURS[names.index(name) % len(MODE_COLOURS)], lw=0, zorder=0)
-        for a, b in r.flights:
+        for _, b in r.flights:
             ax.axvline(b, color="#ef4444", lw=0.7, ls="--", zorder=1)
         ax.set_xlim(0, end)
         ax.grid(alpha=0.25)
@@ -102,7 +102,7 @@ def figure(r, path):
     ax_ekf.grid(alpha=0.25)
 
     n = r.counts
-    colour = "#dc2626" if n["FAIL"] else "#d97706" if n["WARN"] else "#16a34a"
+    colour = {"FAIL": "#dc2626", "INCOMPLETE": "#7c3aed", "WARN": "#d97706"}.get(r.status, "#16a34a")
     fig.suptitle(f"{os.path.basename(r.path)} · {r.firmware}" + (f" · {r.board}" if r.board else ""), x=0.06, ha="left", fontsize=11, weight="bold")
     fig.text(0.06, 0.935, f"{r.verdict}   (PASS {n['PASS']} · WARN {n['WARN']} · FAIL {n['FAIL']})", color=colour, fontsize=10, weight="bold")
     fig.savefig(path, bbox_inches="tight", facecolor="white")
