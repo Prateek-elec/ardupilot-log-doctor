@@ -54,6 +54,7 @@ Flight modes: FBWA (00:06) → LOITER (01:43) → FBWA (03:25) → AUTOTUNE (06:
 ## Highlights
 
 - 🩺 **20+ checks in one command:** the things people ask about on the forums after a bad flight, graded against common ArduPilot guidance.
+- 🎚️ **Harmonic notch from your own log:** finds the motor-noise frequency (FFT) and writes the `INS_HNTCH_*` values to load, as a ready `.param` file.
 - 🛬 **Knows a hard landing from a vibration problem.** Accelerometer clipping at takeoff or touchdown is reported separately, so one firm landing doesn't fail an otherwise healthy flight.
 - 🛩️ **Copter and Plane aware:** it detects the vehicle, names the flight modes, and uses the right tracking limits for each.
 - 🧰 **Tells you what to do.** Every warning and failure comes with a fix to try first.
@@ -68,6 +69,7 @@ Flight modes: FBWA (00:06) → LOITER (01:43) → FBWA (03:25) → AUTOTUNE (06:
 |---|---|---|---|
 | **Vibration** | 95th percentile of the worst axis in steady flight, per IMU | < 30 m/s² | < 60 m/s² |
 | **Clipping** | Accelerometer clips in flight, and separately at takeoff / touchdown | 0 | – |
+| **Motor noise** (copters) | Gyro noise spectrum: peak and harmonic, harmonic notch enabled and set near the peak | notch on, near peak | – |
 | **Power** | Board 5 V rail | 4.8 – 5.4 V | ≥ 4.6 V |
 | | Battery sag under load | < 15 % | < 25 % |
 | | Lowest cell voltage in flight (cell count detected) | > 3.5 V | > 3.3 V |
@@ -96,6 +98,26 @@ log-doctor flight.BIN --limits my_limits.json   # a file with only the limits yo
   "cell_min_v": { "pass_at_least": 3.6, "warn_at_least": 3.4 } }
 ```
 
+## Harmonic notch from your log
+
+Copters filter motor noise with ArduPilot's harmonic notch, which needs the noise frequency. Log Doctor measures it from high-rate gyro data and writes starting values:
+
+```text
+Suggested harmonic notch (noise peak 170 Hz; check, then load in Mission Planner):
+  INS_HNTCH_ENABLE = 1
+  INS_HNTCH_MODE = 1        (throttle-based; 3 = ESC RPM when ESC telemetry is logged)
+  INS_HNTCH_FREQ = 170
+  INS_HNTCH_BW = 85
+  INS_HNTCH_ATT = 40
+  INS_HNTCH_HMNCS = 1       (3 when a second harmonic is found)
+  INS_HNTCH_REF = 0.587     (hover throttle)
+```
+
+<img src="docs/example_spectrum.png" alt="Gyro noise spectrum with the suggested notch" width="100%"/>
+<sub>Spectrum from a real 2S quad log: motor noise around 170 Hz and the suggested notch band.</sub>
+
+It needs gyro data logged fast enough to see motor noise. Before the flight, set **`INS_LOG_BAT_MASK = 1`** (the batch sampler; best) or enable fast IMU logging, then fly a minute of hover. Logs without it still get every other check, and the report says what to change. The values are a starting point: after loading them, log again and confirm the peak has dropped.
+
 ## Options
 
 ```text
@@ -108,6 +130,8 @@ log-doctor LOG [LOG ...]       one or more logs, wildcards work (log-doctor logs
   --print-limits               print the default limits as JSON
   --strict                     exit code 1 if any check fails
 ```
+
+It also writes `<log>_notch.param` (load it via Mission Planner's Full Parameter List) and `<log>_spectrum.png` when a spectrum was possible.
 
 **Exit codes:** `0` analysed, `1` a check failed (only with `--strict`), `2` a log or the limits file couldn't be read.
 

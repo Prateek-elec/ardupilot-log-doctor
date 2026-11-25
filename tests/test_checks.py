@@ -36,7 +36,7 @@ def test_healthy_copter_passes_everything(healthy):
     assert healthy.status == PASS, [(c.name, c.status) for c in healthy.checks if c.status != PASS]
     assert healthy.vehicle == "copter" and healthy.firmware.startswith("ArduCopter")
     assert len(healthy.flights) == 1
-    assert healthy.complete and not healthy.not_checked
+    assert healthy.complete and [a for a, _ in healthy.not_checked] == ["Vibration spectrum (FFT)"]   # 10 Hz IMU
 
 
 def test_flight_summary(healthy):
@@ -259,3 +259,62 @@ def test_cli_bad_limits_file(tmp_path, capsys):
     f.write_text("{not json")
     assert main([p, "--limits", str(f), "--no-files"]) == EXIT_UNREADABLE
     assert "not valid JSON" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- vibration spectrum and harmonic notch
+
+def test_fft_from_batch_sampler_finds_peak_and_harmonic(tmp_path):
+    r = run(tmp_path, batch=True, noise_hz=150, harmonic=True)
+    s = r.spectrum
+    assert s is not None and s.source == "batch sampler"
+    assert abs(s.peak_hz - 150) < 6 and abs(s.harmonic_hz - 300) < 10
+    n = r.notch
+    assert n["INS_HNTCH_MODE"] == 1 and abs(n["INS_HNTCH_FREQ"] - 150) < 6
+    assert n["INS_HNTCH_HMNCS"] == 3 and n["INS_HNTCH_REF"] == 0.35
+    assert n["INS_HNTCH_BW"] == round(s.peak_hz / 2)
+
+
+def test_fft_from_fast_imu(tmp_path):
+    r = run(tmp_path, fast_imu_hz=400, noise_hz=120)
+    assert r.spectrum.source == "IMU log" and abs(r.spectrum.peak_hz - 120) < 5
+    assert r.notch["INS_HNTCH_HMNCS"] == 1                    # no harmonic injected
+
+
+def test_esc_rpm_switches_to_rpm_mode_with_lower_frequency(tmp_path):
+    r = run(tmp_path, batch=True, noise_hz=150, esc_rpm=True)
+    assert r.notch["INS_HNTCH_MODE"] == 3 and r.notch["INS_HNTCH_REF"] == 1
+    assert r.notch["INS_HNTCH_FREQ"] < r.spectrum.peak_hz     # minimum tracking frequency sits below hover
+    assert r.notch["INS_HNTCH_HMNCS"] == 1
+
+
+def test_slow_imu_explains_how_to_get_a_spectrum(tmp_path):
+    r = run(tmp_path)
+    reasons = dict(r.not_checked)
+    assert "INS_LOG_BAT_MASK" in reasons["Vibration spectrum (FFT)"]
+    assert r.spectrum is None and r.notch is None
+
+
+def test_aliasing_warning_near_nyquist(tmp_path):
+    r = run(tmp_path, fast_imu_hz=400, noise_hz=185)
+    assert any("Nyquist" in e for _, e in r.events)
+
+
+@pytest.mark.parametrize("notch, expected", [((0, 0), WARN), ((1, 150), PASS), ((1, 40), WARN)])
+def test_notch_status(tmp_path, notch, expected):
+    r = run(tmp_path, batch=True, noise_hz=150, notch=notch)
+    assert status(r, "Harmonic notch filter") == expected
+
+
+def test_planes_skip_the_notch_check(tmp_path):
+    r = run(tmp_path, vehicle="plane", batch=True, noise_hz=150, notch=(0, 0))
+    assert not [c for c in r.checks if "notch" in c.name.lower()] and r.spectrum is None
+
+
+def test_cli_writes_notch_param_and_spectrum(tmp_path):
+    p = flight_log(str(tmp_path / "n.bin"), duration=DUR, batch=True, noise_hz=150)
+    out = tmp_path / "out"
+    assert main([p, "--out", str(out)]) == EXIT_OK
+    params = (out / "n_notch.param").read_text(encoding="utf-8")
+    assert "INS_HNTCH_ENABLE,1" in params and "INS_HNTCH_FREQ," in params
+    assert (out / "n_spectrum.png").stat().st_size > 10_000
+    assert "## Suggested harmonic notch" in (out / "n_doctor.md").read_text(encoding="utf-8")

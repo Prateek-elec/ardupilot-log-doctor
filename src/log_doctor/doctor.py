@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import fft as fft_mod
 from . import limits as lim_mod
 from .names import err_text, mode_name
 from .reader import Log
@@ -32,6 +33,8 @@ HINTS = {
     "forced": "Arming was forced past the pre-arm checks. Find out which check failed instead of forcing.",
     "arming_check": "Pre-arm safety checks are switched off. Set ARMING_CHECK back to 1 and fix whatever check was failing.",
     "err": "The flight controller logged errors or failsafes; see the event list for which subsystem.",
+    "notch": "Motor noise isn't being filtered. Set up the harmonic notch: use the suggested values in this report, or if there are none, set INS_LOG_BAT_MASK = 1, fly a 1-minute hover and run Log Doctor on that log. A tuned notch lets the gyro filters open up and usually improves the tune noticeably.",
+    "notch_freq": "The notch is set well away from the noise peak in this log. Re-check INS_HNTCH_FREQ / REF against the suggested values.",
     "corrupt": "Part of the log is damaged. Use a good-quality SD card, and check for power dips that interrupt logging.",
 }
 
@@ -63,6 +66,8 @@ class Report:
     modes: list = field(default_factory=list)       # [(start, end, name)]
     events: list = field(default_factory=list)      # [(t, text)]
     not_checked: list = field(default_factory=list)  # [(area, reason)]
+    spectrum: object = None                          # fft.Spectrum when the log had high-rate gyro data
+    notch: dict = None                               # suggested INS_HNTCH_* values
     log: Log = None
 
     @property
@@ -291,6 +296,34 @@ def analyse(path, limits=None):
             add(f"Accel clipping IMU{inst} ({where})", str(n_flight), "0", PASS if n_flight == 0 else FAIL, "clip_flight", n_flight)
             if n_impact:
                 add(f"Accel clipping IMU{inst} (takeoff / touchdown)", str(n_impact), "0", WARN, "clip_impact", n_impact)
+
+    # ---- motor-noise spectrum and harmonic notch (multirotors)
+    if r.vehicle == "copter":
+        enabled = log.params.get("INS_HNTCH_ENABLE")
+        if has_flight:
+            spec, why = fft_mod.analyse(log, flights)
+            if spec is None:
+                skip("Vibration spectrum (FFT)", why)
+            else:
+                r.spectrum = spec
+                text = f"{spec.peak_hz:.0f} Hz, {spec.peak_db:.0f} dB above floor"
+                if spec.harmonic_hz:
+                    text += f"; harmonic {spec.harmonic_hz:.0f} Hz"
+                add(f"Gyro noise peak ({spec.source}, {spec.rate_hz:.0f} Hz)", text, "–", INFO, value=spec.peak_hz)
+                r.notch = fft_mod.notch_suggestion(spec, log)
+                for note in spec.notes:
+                    r.events.append((0.0, "FFT: " + note))
+        if enabled is not None:
+            if int(enabled) == 0:
+                add("Harmonic notch filter (INS_HNTCH_ENABLE)", "disabled", "enabled", WARN, "notch")
+            else:
+                f0 = log.params.get("INS_HNTCH_FREQ")
+                measured = f"enabled, {f0:.0f} Hz" if f0 else "enabled"
+                st = PASS
+                if (f0 and r.spectrum is not None and r.spectrum.peak_db > 10
+                        and not (0.5 * r.spectrum.peak_hz <= f0 <= 1.2 * r.spectrum.peak_hz)):
+                    st = WARN
+                add("Harmonic notch filter (INS_HNTCH_ENABLE)", measured, "enabled, near the noise peak", st, "notch_freq")
 
     # ---- CPU / scheduler
     pm = log.get("PM")

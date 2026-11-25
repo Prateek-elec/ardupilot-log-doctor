@@ -79,6 +79,11 @@ def text(r, stream=None):
         out.append("What to look at (most serious first):")
         for c, hint in hints:
             out.append(f"  • [{c.status}] {c.name}: {hint}")
+    if r.notch:
+        out.append("")
+        out.append(f"Suggested harmonic notch (noise peak {r.spectrum.peak_hz:.0f} Hz; check, then load in Mission Planner):")
+        for k, v in r.notch.items():
+            out.append(f"  {k} = {v}")
     if r.modes:
         out.append("")
         out.append("Flight modes: " + " → ".join(f"{name} ({_mmss(a)})" for a, b, name in r.modes))
@@ -116,6 +121,14 @@ def markdown(r, figure_name=None):
     if hints:
         lines += ["", "## What to look at (most serious first)", ""]
         lines += [f"- {ICON[c.status]} **{c.name}:** {hint}" for c, hint in hints]
+    if r.notch:
+        s = r.spectrum
+        lines += ["", "## Suggested harmonic notch", "",
+                  f"Gyro noise peaks at **{s.peak_hz:.0f} Hz** ({s.peak_db:.0f} dB above the noise floor"
+                  + (f", second harmonic at {s.harmonic_hz:.0f} Hz" if s.harmonic_hz else "")
+                  + f"), from {s.source} data at {s.rate_hz:.0f} Hz. Starting values, following the ArduPilot tuning guide:", "",
+                  "```text"] + [f"{k},{v}" for k, v in r.notch.items()] + ["```", "",
+                  "After loading them, fly again with the batch sampler on and confirm the peak has dropped."]
     if r.modes:
         lines += ["", "## Flight modes", "", "| From | To | Mode |", "|---|---|---|"]
         lines += [f"| {_mmss(a)} | {_mmss(b)} | {name} |" for a, b, name in r.modes]
@@ -137,6 +150,10 @@ def as_json(r, ascii_only=False):
                     "value": None if c.value is None else round(float(c.value), 4),
                     "limit": c.limit, "hint": c.hint} for c in r.checks],
         "not_checked": [{"area": a, "reason": why} for a, why in r.not_checked],
+        "spectrum": None if r.spectrum is None else {
+            "source": r.spectrum.source, "rate_hz": round(r.spectrum.rate_hz, 1), "peak_hz": round(r.spectrum.peak_hz, 1),
+            "peak_db": round(r.spectrum.peak_db, 1), "harmonic_hz": None if r.spectrum.harmonic_hz is None else round(r.spectrum.harmonic_hz, 1)},
+        "notch_suggestion": r.notch,
         "modes": [{"from": round(a, 1), "to": round(b, 1), "mode": m} for a, b, m in r.modes],
         "events": [{"t": round(t, 1), "text": e} for t, e in r.events],
     }, indent=2, ensure_ascii=ascii_only)

@@ -1,0 +1,47 @@
+name: release
+
+# Builds the package on every published GitHub release and uploads it to PyPI with
+# trusted publishing (no API token stored anywhere).
+#
+# One-time setup on pypi.org (by the repo owner):
+#   Account > Publishing > Add a new pending publisher:
+#     PyPI project name: ardupilot-log-doctor
+#     Owner: Prateek-elec   Repository: ardupilot-log-doctor
+#     Workflow: release.yml  Environment: pypi
+# Then in this repo: Settings > Secrets and variables > Actions > Variables > New variable
+#     PYPI_PUBLISH = true
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    if: vars.PYPI_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

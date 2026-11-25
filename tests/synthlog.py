@@ -6,6 +6,7 @@ faults injected so every check can be shown to catch what it should.
 """
 
 import math
+import random
 import struct
 
 HEAD = b"\xa3\x95"
@@ -14,7 +15,8 @@ FMT_ID = 128
 # format char -> (struct code, scale applied on write)
 CODES = {"Q": ("Q", 1), "q": ("q", 1), "f": ("f", 1), "d": ("d", 1), "B": ("B", 1), "b": ("b", 1),
          "H": ("H", 1), "h": ("h", 1), "I": ("I", 1), "i": ("i", 1), "M": ("B", 1),
-         "n": ("4s", 1), "N": ("16s", 1), "Z": ("64s", 1), "L": ("i", 1e7)}
+         "n": ("4s", 1), "N": ("16s", 1), "Z": ("64s", 1), "L": ("i", 1e7),
+         "a": ("64s", "int16x32")}   # ArduPilot's int16[32] array, used by the batch sampler
 
 # name -> (format, columns). Only the fields Log Doctor reads, in ArduPilot's names.
 MESSAGES = {
@@ -36,6 +38,9 @@ MESSAGES = {
     "MAG": ("Qhhh", "TimeUS,MagX,MagY,MagZ"),
     "IMU": ("QBffffff", "TimeUS,I,GyrX,GyrY,GyrZ,AccX,AccY,AccZ"),
     "RCOU": ("QHHHH", "TimeUS,C1,C2,C3,C4"),
+    "ISBH": ("QHBBHHQf", "TimeUS,N,type,instance,mul,smp_cnt,SampleUS,smp_rate"),
+    "ISBD": ("QHHaaa", "TimeUS,N,seqno,x,y,z"),
+    "ESC": ("QBifff", "TimeUS,Instance,RPM,Volt,Curr,Temp"),
 }
 
 # A field-free spot (ArduPilot's own SITL test site) so tests never carry a real location.
@@ -56,7 +61,9 @@ class Writer:
         out = b""
         for ch, v in zip(fmt, values, strict=False):
             code, scale = CODES[ch]
-            if code.endswith("s"):
+            if scale == "int16x32":
+                v = struct.pack("<32h", *[max(-32768, min(32767, int(round(x)))) for x in v])
+            elif code.endswith("s"):
                 v = v.encode() if isinstance(v, str) else v
             elif scale != 1:
                 v = int(round(v * scale))
@@ -83,7 +90,8 @@ class Writer:
 def flight_log(path, vehicle="copter", duration=150.0, vibe=3.0, vibe_from=None, clips_in_flight=0,
                clips_at_landing=0, cell_min=3.8, cells=4, arming_check=1, forced_arm=False,
                ekf=0.1, gps_sats=16, hdop=0.7, gps=True, battery=True, err=None, messages=(),
-               truncate_in_flight=False, roll_error=1.0, rate_hz=10):
+               truncate_in_flight=False, roll_error=1.0, rate_hz=10, noise_hz=None, harmonic=False,
+               batch=False, fast_imu_hz=None, notch=None, esc_rpm=False, hover_throttle=0.35):
     """A whole flight: armed at 5 s, takeoff at 10 s, a 60 m circle at 20 m, land, disarm.
 
     Faults are injected through the arguments; defaults describe a healthy aircraft.
@@ -96,6 +104,10 @@ def flight_log(path, vehicle="copter", duration=150.0, vibe=3.0, vibe_from=None,
     w.write("MSG", 0.6, "TestBoard 00000000 00000000 00000000")
     w.write("PARM", 0.7, "ARMING_CHECK", float(arming_check))
     w.write("PARM", 0.7, "LOG_BITMASK", 176126.0)
+    w.write("PARM", 0.7, "MOT_THST_HOVER", hover_throttle)
+    if notch is not None:                       # (enabled, freq)
+        w.write("PARM", 0.7, "INS_HNTCH_ENABLE", float(notch[0]))
+        w.write("PARM", 0.7, "INS_HNTCH_FREQ", float(notch[1]))
     for t, text in messages:
         w.write("MSG", t, text)
     w.write("MODE", 1.0, 5 if vehicle == "copter" else 5, 5, 0)
@@ -152,8 +164,42 @@ def flight_log(path, vehicle="copter", duration=150.0, vibe=3.0, vibe_from=None,
             w.write("BAT", t, 0, full - sag - 0.002 * t, curr, curr * t / 3.6, 0.0)
         if gps:
             w.write("GPS", t, 0, 3, 200000000 + int(t * 1000), 2390, gps_sats, hdop, lat, lng, 584.0 + alt, spd, 0.0)
-        w.write("IMU", t, 0, 0.001 * math.sin(t * 13), 0.001 * math.cos(t * 11), 0.0005, 0.0, 0.0, -9.81)
+        if not fast_imu_hz:
+            w.write("IMU", t, 0, 0.001 * math.sin(t * 13), 0.001 * math.cos(t * 11), 0.0005, 0.0, 0.0, -9.81)
+        if esc_rpm and flying:
+            for k in range(4):
+                w.write("ESC", t, k, 9000.0 + 50 * k, 15.0, 4.0, 30.0)
         w.write("IMU", t, 1, 0.001 * math.sin(t * 17), 0.001 * math.cos(t * 5), 0.0005, 0.02, 0.0, -9.80)
+
+    rng = random.Random(7)                       # deterministic, so tests are repeatable
+
+    def gyro_noise(tt):
+        """Motor noise (deg/s scale) at noise_hz, optional 2nd harmonic, plus broadband floor."""
+        x = 0.0
+        if noise_hz:
+            x += 0.8 * math.sin(2 * math.pi * noise_hz * tt)
+            if harmonic:
+                x += 0.4 * math.sin(2 * math.pi * 2 * noise_hz * tt + 0.7)
+        return x + rng.gauss(0.0, 0.05)          # broadband floor, no tones of its own
+
+    if fast_imu_hz:
+        dt = 1.0 / fast_imu_hz
+        for i in range(int(t_end * fast_imu_hz)):
+            tt = i * dt
+            if truncate_in_flight and tt > (t_off + t_land) / 2:
+                break
+            f = t_off <= tt <= t_land
+            g = gyro_noise(tt) if f else 0.0005 * math.sin(tt * 13)
+            w.write("IMU", tt, 0, g * 0.017, 0.9 * g * 0.017, 0.5 * g * 0.017, 0.0, 0.0, -9.81)
+
+    if batch:
+        rate, nsamp, mul = 1000.0, 1024, 1000.0
+        for b, tb in enumerate(range(int(t_off) + 10, int(t_land) - 5, 5)):
+            w.write("ISBH", tb, b, 1, 0, mul, nsamp, int(tb * 1e6), rate)
+            for seq in range(nsamp // 32):
+                idx = [seq * 32 + j for j in range(32)]
+                xs = [gyro_noise(tb + k / rate) * mul for k in idx]
+                w.write("ISBD", tb + seq * 0.001, b, seq, xs, [0.9 * x for x in xs], [0.5 * x for x in xs])
 
     if not truncate_in_flight:
         w.write("ARM", t_land + 3, 0, 0, 0, 2)

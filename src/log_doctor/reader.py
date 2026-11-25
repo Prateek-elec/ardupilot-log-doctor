@@ -10,13 +10,64 @@ from pymavlink import DFReader
 
 # Messages used by the checks and plots.
 TYPES = ["VIBE", "PM", "POWR", "BAT", "XKF4", "NKF4", "MAG", "ATT", "GPS", "IMU", "RCOU",
-         "MODE", "ERR", "ARM", "EV", "MSG", "POS", "BARO", "CTUN", "PARM"]
+         "MODE", "ERR", "ARM", "EV", "MSG", "POS", "BARO", "CTUN", "PARM", "ISBH", "ISBD", "ESC"]
 
 # Field that holds the instance number (IMU 0/1/2, GPS 0/1, ...) for each message type.
 INSTANCE_FIELD = {"VIBE": "IMU", "BAT": "Inst", "GPS": "I", "IMU": "I", "MAG": "I",
-                  "XKF4": "C", "NKF4": "C", "BARO": "I"}
+                  "XKF4": "C", "NKF4": "C", "BARO": "I", "ESC": "Instance"}
+
+# The only fields the checks read, per message type. Reading just these, straight from the raw record,
+# is several times faster than asking pymavlink for every field of every message.
+FIELDS = {
+    "VIBE": ("IMU", "VibeX", "VibeY", "VibeZ", "Clip", "Clip0", "Clip1", "Clip2"),
+    "PM": ("Load", "NLon", "NLoop", "NL"),
+    "POWR": ("Vcc",),
+    "BAT": ("Inst", "Volt", "Curr", "CurrTot"),
+    "XKF4": ("C", "SV", "SP", "SH", "SM"),
+    "NKF4": ("C", "SV", "SP", "SH", "SM"),
+    "MAG": ("I", "MagX", "MagY", "MagZ"),
+    "ATT": ("DesRoll", "Roll", "DesPitch", "Pitch", "DesYaw", "Yaw"),
+    "GPS": ("I", "Status", "NSats", "HDop", "Lat", "Lng", "Spd"),
+    "IMU": ("I", "GyrX", "GyrY", "GyrZ", "AccX", "AccY", "AccZ"),
+    "RCOU": tuple(f"C{i}" for i in range(1, 15)),
+    "MODE": ("Mode", "ModeNum"),
+    "ERR": ("Subsys", "ECode"),
+    "ARM": ("ArmState", "Forced"),
+    "EV": ("Id",),
+    "MSG": ("Message",),
+    "POS": ("Lat", "Lng", "RelHomeAlt"),
+    "BARO": ("I", "Alt"),
+    "CTUN": ("ThO",),
+    "ISBH": ("N", "type", "instance", "mul", "smp_cnt", "smp_rate"),
+    "ISBD": ("N", "seqno", "x", "y", "z"),
+    "ESC": ("Instance", "RPM"),
+}
 
 DATAFLASH_HEADER = b"\xa3\x95"
+
+
+def _field_plan(fmt, typ):
+    """[(name, index, multiplier, is_array)] for the fields of `typ` this format actually has."""
+    plan = []
+    for name in ("TimeUS",) + FIELDS.get(typ, ()):
+        i = fmt.colhash.get(name)
+        if i is None:
+            continue
+        plan.append((name, i, fmt.msg_mults[i], fmt.format[i] == "a"))
+    return plan
+
+
+def _value(raw, mult, is_array):
+    """pymavlink's own conversion: decode text, keep arrays, apply the unit multiplier."""
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raw = raw.decode("ISO-8859-1")
+        return raw.split("\0", 1)[0]
+    if is_array or mult is None:
+        return raw
+    return raw / (1.0 / mult) if 0.0 < mult < 1.0 else raw * mult
 
 
 class LogError(Exception):
@@ -58,6 +109,7 @@ class Log:
         noise = io.StringIO()
         rows = defaultdict(list)
         texts_raw = []
+        plans = {}               # format id -> field plan, built once per message type
         t_min = float("inf")
         # pymavlink prints a line per damaged record; keep the console clean and count them instead.
         with contextlib.redirect_stdout(noise):
@@ -78,11 +130,15 @@ class Log:
                 if typ == "PARM":
                     self.params[str(getattr(m, "Name", ""))] = getattr(m, "Value", None)
                     continue
-                cols = m.fmt.columns
-                if "TimeUS" not in cols:
+                fmt = m.fmt
+                plan = plans.get(fmt.type)
+                if plan is None:
+                    plan = plans[fmt.type] = _field_plan(fmt, typ)
+                if not plan or plan[0][0] != "TimeUS":
                     continue
+                el = m._elements
                 try:
-                    vals = {c: getattr(m, c) for c in cols}
+                    vals = {name: _value(el[i], mult, arr) for name, i, mult, arr in plan}
                 except Exception:  # noqa: BLE001 - a field that won't decode
                     self.corrupt_records += 1
                     continue

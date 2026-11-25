@@ -108,3 +108,32 @@ def figure(r, path):
     fig.savefig(path, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     return path
+
+
+def spectrum_figure(r, path):
+    """Gyro noise spectrum with the peak and the suggested notch centre marked."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    s = r.spectrum
+    fig, ax = plt.subplots(figsize=(10, 4.2), dpi=120)
+    db = 10 * np.log10(np.maximum(s.psd, 1e-30))
+    ax.plot(s.freqs, db, color="#2563eb", lw=1.1)
+    ax.axvline(s.peak_hz, color="#ef4444", lw=1, ls="--", label=f"noise peak {s.peak_hz:.0f} Hz")
+    if s.harmonic_hz:
+        ax.axvline(s.harmonic_hz, color="#f97316", lw=1, ls=":", label=f"harmonic {s.harmonic_hz:.0f} Hz")
+    if r.notch and isinstance(r.notch.get("INS_HNTCH_FREQ"), (int, float)):
+        f0, bw = r.notch["INS_HNTCH_FREQ"], r.notch["INS_HNTCH_BW"]
+        ax.axvspan(f0 - bw / 2, f0 + bw / 2, color="#16a34a", alpha=0.12, label=f"suggested notch {f0} Hz, BW {bw} Hz")
+    ax.set_xlim(0, s.nyquist)
+    ax.set_xlabel("Frequency (Hz)")
+    ax.set_ylabel("Gyro noise power (dB)")
+    ax.set_title(f"Gyro noise spectrum: {s.source}, {s.rate_hz:.0f} Hz", fontsize=10, loc="left")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8, frameon=False, loc="upper right")
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    fig.savefig(path, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return path

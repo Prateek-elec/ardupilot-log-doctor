@@ -89,6 +89,15 @@ def main(argv=None):
             from .plot import figure
             fig_name = f"{stem}_doctor.png"
             figure(r, os.path.join(out, fig_name))
+        if r.spectrum is not None and not a.no_plot:
+            from .plot import spectrum_figure
+            spectrum_figure(r, os.path.join(out, f"{stem}_spectrum.png"))
+        if r.notch:
+            with open(os.path.join(out, f"{stem}_notch.param"), "w", encoding="utf-8") as f:
+                f.write("# Suggested harmonic notch from ArduPilot Log Doctor. Check before flying.\n")
+                for k, v in r.notch.items():
+                    if isinstance(v, (int, float)):
+                        f.write(f"{k},{v}\n")
         md = os.path.join(out, f"{stem}_doctor.md")
         with open(md, "w", encoding="utf-8") as f:
             f.write(rep.markdown(r, fig_name))
